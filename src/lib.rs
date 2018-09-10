@@ -201,14 +201,9 @@ mod tests {
                             self.registers[0xF] = vf as u8;
                         },
                         0x0005 => {
-                            let temp : i32 = (self.registers[index_x] - self.registers[index_y]) as i32;
-                            self.registers[index_x] -= self.registers[index_y];
-                            if temp & 0xFF00 < 0 {
-                                self.registers[0xF] = 0;
-                            }
-                            else {
-                                self.registers[0xF] = 1;
-                            }
+                            let (vx, vf) = self.registers[index_x].overflowing_sub(self.registers[index_y]);
+                            self.registers[index_x] = vx;
+                            self.registers[0xF] = vf as u8;
                         },
                         0x0006 => {
                             // TODO: Carefully confirm this is not supposed to be index_y
@@ -216,14 +211,9 @@ mod tests {
                             self.registers[index] >>= 1;
                         },
                         0x0007 => {
-                            let temp : i32 = (self.registers[index_y] - self.registers[index_x]) as i32;
-                            self.registers[index_x] = self.registers[index_y] - self.registers[index_x];
-                            if temp & 0xFF00 < 0 {
-                                self.registers[0xF] = 0;
-                            }
-                            else {
-                                self.registers[0xF] = 1;
-                            }
+                            let (vx, vf) = self.registers[index_y].overflowing_sub(self.registers[index_x]);
+                            self.registers[index_x] = vx;
+                            self.registers[0xF] = vf as u8;
                         },
                         0x000E => {
                             // Conflicting docs TODO
