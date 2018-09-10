@@ -179,7 +179,7 @@ mod tests {
                     self.registers[index] = kk;
                 },
                 0x7000 => {
-                    self.registers[index] += kk;
+                    self.registers[index] = self.registers[index].wrapping_add(kk);
                 },
                 0x8000 => {
                     match opcode & 0x000F {
@@ -196,14 +196,9 @@ mod tests {
                             self.registers[index_x] ^= self.registers[index_y];
                         },
                         0x0004 => {
-                            let temp : u16 = (self.registers[index_x] + self.registers[index_y]) as u16;
-                            self.registers[index_x] += self.registers[index_y];
-                            if temp & 0xFF00 != 0 {
-                                self.registers[0xF] = 1;
-                            }
-                            else {
-                                self.registers[0xF] = 0;
-                            }
+                            let (vx, vf) = self.registers[index_x].overflowing_add(self.registers[index_y]);
+                            self.registers[index_x] = vx;
+                            self.registers[0xF] = vf as u8;
                         },
                         0x0005 => {
                             let temp : i32 = (self.registers[index_x] - self.registers[index_y]) as i32;
