@@ -307,6 +307,7 @@ mod tests {
                         0x000A => println!("TODO 0xFx0A"),
                         0x0015 => self.delay_timer = self.registers[index],
                         0x0018 => self.sound_timer = self.registers[index],
+                        0x001E => println!("TODO 0xF01E"),
                         0x0029 => self.instruction_reg += self.registers[index] as u16,
                         0x0033 => {
                             let hundreds = self.registers[index] / 100;
