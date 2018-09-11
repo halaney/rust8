@@ -93,8 +93,9 @@ impl<'a> Chip8<'a> {
         chip
     }
 
-    // Decrements timers if not 0
-    fn update_timers(&mut self) {
+    // Decrements timers at 60 Hz if not 0
+    // When sound_timer is non zero the chip-8 buzzer sounds
+    pub fn update_timers(&mut self) {
         if self.delay_timer != 0 {
             self.delay_timer -= 1;
         }
@@ -104,6 +105,7 @@ impl<'a> Chip8<'a> {
     }
 
     // Loads a buffer into memory at location 0x200
+    // which is where ROM data starts for chip-8
     pub fn load_rom(&mut self, buffer: Vec<u8>) {
         for (i, data) in buffer.iter().enumerate() {
             self.memory[0x200 + i] = *data;
@@ -151,8 +153,6 @@ impl<'a> Chip8<'a> {
 
         // Increment program counter now
         self.pc += 2;
-
-        self.update_timers();
 
         // Giant switch statement to determine opcode
         match opcode & 0xF000 {
