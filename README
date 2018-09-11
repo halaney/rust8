@@ -1,1 +1,17 @@
-A chip-8 emulator written in rust
+A chip-8 emulator written in rust.
+Currently a work in progress and quite a mess,
+as this is a sloppy port from a c++ hackathon project.
+
+Lowish Hanging Fruit
+-----------------
+ - Finish instruction implementation
+ - Unit test each instruction
+ - Update documentation further
+ - Pull each struct into own mod
+ - Implement debug print of system for panics
+ - Pull in sdl2 for graphics, audio, input
+ - Have main loop cycle at correct frequency
+ - Implement start/stop
+ - Implement GUI for loading ROMs
+ - Implement realtime debugger
+ - Implement runtime options (frequency, colors, audio)
