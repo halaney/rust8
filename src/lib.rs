@@ -91,6 +91,7 @@ mod tests {
             chip
         }
 
+        // Decrements timers if not 0
         fn update_timers(&mut self) {
             if self.delay_timer != 0 {
                 self.delay_timer -= 1;
@@ -100,12 +101,14 @@ mod tests {
             }
         }
 
+        // Loads a buffer into memory at location 0x200
         pub fn load_rom(&mut self, buffer: Vec<u8>) {
             for (i, data) in buffer.iter().enumerate() {
                 self.memory[0x200 + i] = *data;
             }
         }
 
+        // Loads the fontset chip 8 provides into memory
         fn load_fontset(&mut self) {
             // Load the fontset into the beginning of the interpreter memory
             let fontset : [u8; 80] = [
@@ -131,46 +134,58 @@ mod tests {
             }
         }
 
+        // Runs an instruction, updating registers as necessary
         pub fn cycle(&mut self) {
             let mut opcode : u16 = (self.memory[self.pc as usize] as u16) << 8;
             opcode |= self.memory[(self.pc + 1) as usize] as u16;
 
+            // Calculate indexes of registers derived from opcode
             let index : usize = ((opcode & 0x0F00) >> 8) as usize;
             let index_x : usize = index;
             let index_y : usize = ((opcode & 0x00F0) >> 4) as usize;
+
+            // Calculate variable used in some opcodes
             let kk : u8 = (opcode & 0x00FF) as u8;
 
+            // Increment program counter now
             self.pc += 2;
+
             self.update_timers();
 
+            // Giant switch statement to determine opcode
             match opcode & 0xF000 {
                 0x0000 => {
                     match opcode {
                         0x00E0 => self.screen.clear_screen(),
                         0x00EE => {
+                            // Saves top of stack to program counter
                             self.sp -= 1;
                             self.pc = self.stack[self.sp as usize];
                         },
                         _ => panic!("Unknown instruction: {:x}", opcode),
                     }
                 }
-                0x1000 => self.pc = opcode & 0x0FFF,
+                0x1000 => self.pc = opcode & 0x0FFF,  // Jump to 0x0nnn
                 0x2000 => {
+                    // Push the program counter onto stack and then jump to 0x0nnn
                     self.stack[self.sp as usize] = self.pc;
                     self.sp += 1;
                     self.pc = opcode & 0x0FFF;
                 },
                 0x3000 => {
+                    // Skip next instruction if condition met
                     if kk == self.registers[index] {
                         self.pc += 2;
                     }
                 },
                 0x4000 => {
+                    // Skip next instruction if condition met
                     if kk != self.registers[index] {
                         self.pc += 2;
                     }
                 },
                 0x5000 => {
+                    // Skip next instruction if condition met
                     if self.registers[index_x] == self.registers[index_y] {
                         self.pc += 2;
                     }
@@ -183,6 +198,7 @@ mod tests {
                 },
                 0x8000 => {
                     match opcode & 0x000F {
+                        // Binary operators
                         0x0000 => {
                             self.registers[index_x] = self.registers[index_y];
                         },
@@ -195,6 +211,7 @@ mod tests {
                         0x0003 => {
                             self.registers[index_x] ^= self.registers[index_y];
                         },
+                        // Overflow aware operators
                         0x0004 => {
                             let (vx, vf) = self.registers[index_x].overflowing_add(self.registers[index_y]);
                             self.registers[index_x] = vx;
@@ -224,15 +241,17 @@ mod tests {
                     }
                 }
                 0x9000 => {
+                    // Skip instruction if condition met
                     if self.registers[index_x] != self.registers[index_y] {
                         self.pc += 2;
                     }
                 },
                 0xA000 => self.instruction_reg = 0x00FF & opcode,
                 0xB000 => self.pc = (0x0FFF & opcode) + self.registers[0] as u16,
-                0xC000 => self.registers[index] = rand::random::<u8>() & kk,
+                0xC000 => self.registers[index] = rand::random::<u8>() & kk,  // random generator
                 0xD000 => {
                     println!("TODO 0xD000");
+                    // Draw a sprite, detecting collision
                     /*
                     uint8_t height = 0x000F & opcode;
                     uint8_t x = Vx[indexX];
@@ -266,6 +285,7 @@ mod tests {
                     match opcode & 0x00FF {
                         0x009E => {
                             println!("TODO 0xEx9E");
+                            // If key pressed skip instruction
                             /*
                             if (mKeys[Vx[index]])
                             {
@@ -275,7 +295,7 @@ mod tests {
                         },
                         0x00A1 => {
                             println!("TODO 0xExA1");
-
+                            // If key not pressed skip instruction
                             /*
                             if (!mKeys[Vx[index]])
                             {
@@ -292,9 +312,16 @@ mod tests {
                         0x000A => println!("TODO 0xFx0A"),
                         0x0015 => self.delay_timer = self.registers[index],
                         0x0018 => self.sound_timer = self.registers[index],
-                        0x001E => println!("TODO 0xF01E"),
-                        0x0029 => self.instruction_reg += self.registers[index] as u16,
+                        0x001E => self.instruction_reg += self.registers[index] as u16,
+                        0x0029 => {
+                            // set I = location of sprite registers[index]
+                            let character = self.registers[index];
+                            self.instruction_reg = character as u16 * 5;
+                        },
                         0x0033 => {
+                            // The interpreter takes the decimal value of Vx, and places
+                            // the hundreds digit in memory at location in I, the tens digit at
+                            // location I+1, and the ones digit at location I+2.
                             let hundreds = self.registers[index] / 100;
                             let tens = (self.registers[index] / 10) % 10;
                             let ones = self.registers[index] % 10;
