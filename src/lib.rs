@@ -350,26 +350,23 @@ mod tests {
     }
 
     // Chip8 specific tests
+
+    // Helper function to convert opcode vector to u8 vector
+    fn opcodes_to_buffer(opcodes: &Vec<u16>) -> Vec<u8> {
+        let mut buffer: Vec<u8> = Vec::new();
+        for opcode in opcodes.iter() {
+            buffer.push(((opcode & 0xFF00) >> 8) as u8);
+            buffer.push((opcode & 0x00FF) as u8);
+        }
+        buffer
+    }
+
     #[test]
     fn test_load_rom() {
-        // TODO: Remove this message once the below comment is verified
-        // Concerned about endianess and how we are currently reading the ROMs.
-        // I *believe* that we are doing it correctly here, but this also
-        // illustrates the annoyance of writing our own mini test ROMs as u8s.
-        // If this is correct, a helper function taking a Vec<u16> and converting
-        // it to a Vec<u8> would simplify the unit testing.
-        // Supposedly chip-8 programs are stored big endian... so the following
-        // should be true:
-        // if instruction is 0x0102 then read_until_end would return [0x01, 0x02]
-        // regardless of the fact that the file storage for said instruction on
-        // x86 would be 0x0201 because it is little endian. Maybe I am making a
-        // bigger deal out of this than I should...
-        // Oh well, until we get this thing some what verified I'll leave this
-        // overly verbose comment.
         let screen = Rc::new(RefCell::new(Screen::new()));
         let mut chip8 = Chip8::new(Rc::clone(&screen)); // Clears screen in new()
-        let rom: Vec<u8> = vec![0x00, 0x01, 0x02, 0x03]; // Random ROM
-        chip8.load_rom(rom);
+        let rom: Vec<u16> = vec![0x0001, 0x0203]; // Random ROM
+        chip8.load_rom(opcodes_to_buffer(&rom));
         assert_eq!(chip8.memory[0x200], 0x00);
         assert_eq!(chip8.memory[0x201], 0x01);
         assert_eq!(chip8.memory[0x202], 0x02);
@@ -381,12 +378,40 @@ mod tests {
         let screen = Rc::new(RefCell::new(Screen::new()));
         let mut chip8 = Chip8::new(Rc::clone(&screen)); // Clears screen in new()
         screen.borrow_mut().bitmap[1][2] = true;
-        let rom: Vec<u8> = vec![0x00, 0xE0]; // Clear screen instruction
-        chip8.load_rom(rom);
-
+        let rom: Vec<u16> = vec![0x00E0]; // Clear screen instruction
+        chip8.load_rom(opcodes_to_buffer(&rom));
         assert!(screen.borrow().bitmap[1][2]);
         chip8.cycle();
         assert_eq!(chip8.pc, 0x202);
         assert!(!screen.borrow().bitmap[1][2]);
+    }
+
+    #[test]
+    fn test_push_and_pop_stack() {
+        let screen = Rc::new(RefCell::new(Screen::new()));
+        let mut chip8 = Chip8::new(Rc::clone(&screen)); // Clears screen in new()
+        let rom: Vec<u16> = vec![0x2666]; // Push pc to stack, jump to 0x666
+        chip8.load_rom(opcodes_to_buffer(&rom));
+
+        // Lazily insert a pop stack at the jump address
+        chip8.memory[0x666] = 0x00;
+        chip8.memory[0x667] = 0xEE;
+        chip8.cycle();
+        assert_eq!(chip8.sp, 1);
+        assert_eq!(chip8.stack[0], 0x202);
+        assert_eq!(chip8.pc, 0x666);
+        chip8.cycle();
+        assert_eq!(chip8.sp, 0);
+        assert_eq!(chip8.pc, 0x202);
+    }
+
+    #[test]
+    fn test_jump() {
+        let screen = Rc::new(RefCell::new(Screen::new()));
+        let mut chip8 = Chip8::new(Rc::clone(&screen)); // Clears screen in new()
+        let rom: Vec<u16> = vec![0x1666]; // Push pc to stack, jump to 0x666
+        chip8.load_rom(opcodes_to_buffer(&rom));
+        chip8.cycle();
+        assert_eq!(chip8.pc, 0x666);
     }
 }
