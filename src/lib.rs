@@ -30,7 +30,9 @@ pub struct Chip8 {
     // For better or worse, use matrix notation for now.
     // The screen is 64x32 pixels, i.e 64 wide 32 tall. There are 32 rows,
     // 64 columns. I try to stick to that notation here but it should probably
-    // be changed to screen[width][height] like most graphics apis seem to be
+    // be changed to screen[width][height] like most graphics apis seem to be.
+    // Each entry represents if the pixel is currently set (i.e. is white)
+    // or is not set (i.e. is black, the background).
     pub screen: [[bool; 64]; 32],
     pub keys: [bool; 0xF + 1], // Input is a hex keyboard
     memory: [u8; 4096],
@@ -65,8 +67,8 @@ impl Chip8 {
     // Clear the screen
     fn clear_screen(&mut self) {
         for (_i, row) in self.screen.iter_mut().enumerate() {
-            for column in row.iter_mut() {
-                *column = false;
+            for pixel in row.iter_mut() {
+                *pixel = false;
             }
         }
     }
@@ -229,7 +231,7 @@ impl Chip8 {
                     self.pc += 2;
                 }
             }
-            0xA000 => self.instruction_reg = 0x00FF & opcode,
+            0xA000 => self.instruction_reg = 0x0FFF & opcode,
             0xB000 => self.pc = (0x0FFF & opcode) + self.registers[0] as u16,
             0xC000 => self.registers[index] = rand::random::<u8>() & kk, // random generator
             0xD000 => {
@@ -250,19 +252,16 @@ impl Chip8 {
                         pixel >>= 7;
 
                         // Check for collision
-                        if self.screen[((current_height + y) % 32) as usize]
-                            [((current_width + x) % 64) as usize] as u8
-                            & pixel
-                            == 1
-                        {
+                        let y_offset = ((current_height + y) % 32) as usize;
+                        let x_offset = ((current_width + x) % 64) as usize;
+                        if self.screen[y_offset][x_offset] as u8 & pixel == 1 {
                             self.registers[0xF] = 1;
                         }
-                        if pixel == 1 {
-                            self.screen[((current_height + y) % 32) as usize]
-                                [((current_width + x) % 64) as usize] = true;
+                        // Pixels are XOR'ed onto the screen
+                        if self.screen[y_offset][x_offset] as u8 ^ pixel == 1 {
+                            self.screen[y_offset][x_offset] = true;
                         } else {
-                            self.screen[((current_height + y) % 32) as usize]
-                                [((current_width + x) % 64) as usize] = false;
+                            self.screen[y_offset][x_offset] = false;
                         }
                     }
                 }
@@ -283,7 +282,18 @@ impl Chip8 {
             0xF000 => {
                 match opcode & 0x00FF {
                     0x0007 => self.registers[index] = self.delay_timer,
-                    0x000A => println!("TODO 0xFx0A"),
+                    0x000A => {
+                        // This should "block" until a key is pressed, storing the key
+                        // We "block" by rolling back the PC to this instruction again
+                        // allowing us to give control back to the main game loop to
+                        // grab any keyboard updates
+                        self.pc -= 2;
+                        for (i, key) in self.keys.iter().enumerate() {
+                            if *key {
+                                self.registers[index] = i as u8;
+                            }
+                        }
+                    }
                     0x0015 => self.delay_timer = self.registers[index],
                     0x0018 => self.sound_timer = self.registers[index],
                     0x001E => self.instruction_reg += self.registers[index] as u16,
