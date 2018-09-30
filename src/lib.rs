@@ -1,55 +1,40 @@
 extern crate rand;
-use std::cell::RefCell;
-use std::rc::Rc;
-
-pub struct Screen {
-    bitmap: [[bool; 64]; 64],
-}
-
-impl Screen {
-    pub fn new() -> Screen {
-        Screen {
-            bitmap: [[false; 64]; 64],
-        }
-    }
-
-    fn clear_screen(&mut self) {
-        for (_i, row) in self.bitmap.iter_mut().enumerate() {
-            for col in row.iter_mut() {
-                *col = false;
-            }
-        }
-    }
-}
 
 /* memory */
 /* mem map taken from http://devernay.free.fr/hacks/chip8/C8TECH10.HTM */
 /* Memory Map:
-        +---------------+= 0xFFF (4095) End of Chip-8 RAM
-        |               |
-        |               |
-        |               |
-        |               |
-        |               |
-        | 0x200 to 0xFFF|
-        |     Chip-8    |
-        | Program / Data|
-        |     Space     |
-        |               |
-        |               |
-        |               |
-        +- - - - - - - -+= 0x600 (1536) Start of ETI 660 Chip-8 programs
-        |               |
-        |               |
-        |               |
-        +---------------+= 0x200 (512) Start of most Chip-8 programs
-        | 0x000 to 0x1FF|
-        | Reserved for  |
-        |  interpreter  |
-        +---------------+= 0x000 (0) Start of Chip-8 RAM
-     */
+   +---------------+= 0xFFF (4095) End of Chip-8 RAM
+   |               |
+   |               |
+   |               |
+   |               |
+   |               |
+   | 0x200 to 0xFFF|
+   |     Chip-8    |
+   | Program / Data|
+   |     Space     |
+   |               |
+   |               |
+   |               |
+   +- - - - - - - -+= 0x600 (1536) Start of ETI 660 Chip-8 programs
+   |               |
+   |               |
+   |               |
+   +---------------+= 0x200 (512) Start of most Chip-8 programs
+   | 0x000 to 0x1FF|
+   | Reserved for  |
+   |  interpreter  |
+   +---------------+= 0x000 (0) Start of Chip-8 RAM
+*/
 pub struct Chip8 {
-    screen: Rc<RefCell<Screen>>,
+    // For better or worse, use matrix notation for now.
+    // The screen is 64x32 pixels, i.e 64 wide 32 tall. There are 32 rows,
+    // 64 columns. I try to stick to that notation here but it should probably
+    // be changed to screen[width][height] like most graphics apis seem to be.
+    // Each entry represents if the pixel is currently set (i.e. is white)
+    // or is not set (i.e. is black, the background).
+    pub screen: [[bool; 64]; 32],
+    pub keys: [bool; 0xF + 1], // Input is a hex keyboard
     memory: [u8; 4096],
     registers: [u8; 16],
     instruction_reg: u16,
@@ -61,9 +46,10 @@ pub struct Chip8 {
 }
 
 impl Chip8 {
-    pub fn new(screen: Rc<RefCell<Screen>>) -> Chip8 {
+    pub fn new() -> Chip8 {
         let mut chip = Chip8 {
-            screen: screen,
+            screen: [[false; 64]; 32],
+            keys: [false; 0xF + 1],
             memory: [0; 4096],
             registers: [0; 16],
             instruction_reg: 0,
@@ -73,9 +59,18 @@ impl Chip8 {
             sp: 0,
             stack: [0; 16],
         };
-        chip.screen.borrow_mut().clear_screen();
+        chip.clear_screen();
         chip.load_fontset();
         chip
+    }
+
+    // Clear the screen
+    fn clear_screen(&mut self) {
+        for (_i, row) in self.screen.iter_mut().enumerate() {
+            for pixel in row.iter_mut() {
+                *pixel = false;
+            }
+        }
     }
 
     // Decrements timers at 60 Hz if not 0
@@ -143,7 +138,7 @@ impl Chip8 {
         match opcode & 0xF000 {
             0x0000 => {
                 match opcode {
-                    0x00E0 => self.screen.borrow_mut().clear_screen(),
+                    0x00E0 => self.clear_screen(),
                     0x00EE => {
                         // Saves top of stack to program counter
                         self.sp -= 1;
@@ -236,67 +231,69 @@ impl Chip8 {
                     self.pc += 2;
                 }
             }
-            0xA000 => self.instruction_reg = 0x00FF & opcode,
+            0xA000 => self.instruction_reg = 0x0FFF & opcode,
             0xB000 => self.pc = (0x0FFF & opcode) + self.registers[0] as u16,
             0xC000 => self.registers[index] = rand::random::<u8>() & kk, // random generator
             0xD000 => {
-                println!("TODO 0xD000");
                 // Draw a sprite, detecting collision
-                    /*
-                    uint8_t height = 0x000F & opcode;
-                    uint8_t x = Vx[indexX];
-                    uint8_t y = Vx[indexY];
-                    Vx[0xF] = 0;  // No collision to start with initially
+                let height = (0x000F & opcode) as u8;
+                let x = self.registers[index_x];
+                let y = self.registers[index_y];
+                self.registers[0xF] = 0; // No collision detected initially
 
-                    // Walk the sprite length (corresponding to height)
-                    for (int currentHeight = 0; currentHeight < height; ++currentHeight)
-                    {
-                        // Walk each sprite byte from MSB to LSB (corresponding to width)
-                        for (int currentWidth = 0; currentWidth < 8; ++currentWidth)
-                        {
-                            // Isolate the current bit
-                            uint8_t spriteByte = memory[I+currentHeight];
-                            uint8_t pixel = 0x80 & (spriteByte << currentWidth);
-                            pixel = pixel >> 7;
+                // Walk the length of the sprite (corresponding to height)
+                for current_height in 0..height {
+                    // Walk each sprite byte from MSB to LSB (corresponding to width)
+                    for current_width in 0..8 {
+                        // Isolate the current bit
+                        let sprite_byte: u8 =
+                            self.memory[(self.instruction_reg + current_height as u16) as usize];
+                        let mut pixel: u8 = 0x80 & (sprite_byte << current_width);
+                        pixel >>= 7;
 
-                            // Check for collision
-                            if (mScreen[(currentHeight+y)%32][(currentWidth+x)%64] & pixel)
-                            {
-                                Vx[0xF] = 1;
-                            }
-                            mScreen[(currentHeight+y)%32][(currentWidth+x)%64] ^= pixel;
+                        // Check for collision
+                        let y_offset = ((current_height + y) % 32) as usize;
+                        let x_offset = ((current_width + x) % 64) as usize;
+                        if self.screen[y_offset][x_offset] as u8 & pixel == 1 {
+                            self.registers[0xF] = 1;
+                        }
+                        // Pixels are XOR'ed onto the screen
+                        if self.screen[y_offset][x_offset] as u8 ^ pixel == 1 {
+                            self.screen[y_offset][x_offset] = true;
+                        } else {
+                            self.screen[y_offset][x_offset] = false;
                         }
                     }
-                    Q_EMIT drawSignal();
-                    break;
-                     */            }
-            0xE000 => {
-                match opcode & 0x00FF {
-                    0x009E => {
-                        println!("TODO 0xEx9E");
-                        // If key pressed skip instruction
-                            /*
-                            if (mKeys[Vx[index]])
-                            {
-                                PC += 2;
-                            }
-                            */                    }
-                    0x00A1 => {
-                        println!("TODO 0xExA1");
-                        // If key not pressed skip instruction
-                            /*
-                            if (!mKeys[Vx[index]])
-                            {
-                                PC += 2;
-                            }
-                            */                    }
-                    _ => panic!("Unknown instruction: {:x}", opcode),
                 }
             }
+            0xE000 => match opcode & 0x00FF {
+                0x009E => {
+                    if self.keys[self.registers[index] as usize] {
+                        self.pc += 2;
+                    }
+                }
+                0x00A1 => {
+                    if !self.keys[self.registers[index] as usize] {
+                        self.pc += 2;
+                    }
+                }
+                _ => panic!("Unknown instruction: {:x}", opcode),
+            },
             0xF000 => {
                 match opcode & 0x00FF {
                     0x0007 => self.registers[index] = self.delay_timer,
-                    0x000A => println!("TODO 0xFx0A"),
+                    0x000A => {
+                        // This should "block" until a key is pressed, storing the key
+                        // We "block" by rolling back the PC to this instruction again
+                        // allowing us to give control back to the main game loop to
+                        // grab any keyboard updates
+                        self.pc -= 2;
+                        for (i, key) in self.keys.iter().enumerate() {
+                            if *key {
+                                self.registers[index] = i as u8;
+                            }
+                        }
+                    }
                     0x0015 => self.delay_timer = self.registers[index],
                     0x0018 => self.sound_timer = self.registers[index],
                     0x001E => self.instruction_reg += self.registers[index] as u16,
@@ -340,36 +337,29 @@ impl Chip8 {
 mod tests {
     use super::*;
 
-    // Screen specific tests
-    #[test]
-    fn test_clear_screen_works() {
-        let mut screen = Screen::new();
-        screen.bitmap[1][2] = true;
-        screen.clear_screen();
-        assert!(!screen.bitmap[1][2]);
+    // Helper function to convert opcode vector to u8 vector
+    fn opcodes_to_buffer(opcodes: &Vec<u16>) -> Vec<u8> {
+        let mut buffer: Vec<u8> = Vec::new();
+        for opcode in opcodes.iter() {
+            buffer.push(((opcode & 0xFF00) >> 8) as u8);
+            buffer.push((opcode & 0x00FF) as u8);
+        }
+        buffer
     }
 
-    // Chip8 specific tests
+    #[test]
+    fn test_clear_screen_works() {
+        let mut chip8 = Chip8::new();
+        chip8.screen[1][2] = true;
+        chip8.clear_screen();
+        assert!(!chip8.screen[1][2]);
+    }
+
     #[test]
     fn test_load_rom() {
-        // TODO: Remove this message once the below comment is verified
-        // Concerned about endianess and how we are currently reading the ROMs.
-        // I *believe* that we are doing it correctly here, but this also
-        // illustrates the annoyance of writing our own mini test ROMs as u8s.
-        // If this is correct, a helper function taking a Vec<u16> and converting
-        // it to a Vec<u8> would simplify the unit testing.
-        // Supposedly chip-8 programs are stored big endian... so the following
-        // should be true:
-        // if instruction is 0x0102 then read_until_end would return [0x01, 0x02]
-        // regardless of the fact that the file storage for said instruction on
-        // x86 would be 0x0201 because it is little endian. Maybe I am making a
-        // bigger deal out of this than I should...
-        // Oh well, until we get this thing some what verified I'll leave this
-        // overly verbose comment.
-        let screen = Rc::new(RefCell::new(Screen::new()));
-        let mut chip8 = Chip8::new(Rc::clone(&screen)); // Clears screen in new()
-        let rom: Vec<u8> = vec![0x00, 0x01, 0x02, 0x03]; // Random ROM
-        chip8.load_rom(rom);
+        let mut chip8 = Chip8::new();
+        let rom: Vec<u16> = vec![0x0001, 0x0203]; // Random ROM
+        chip8.load_rom(opcodes_to_buffer(&rom));
         assert_eq!(chip8.memory[0x200], 0x00);
         assert_eq!(chip8.memory[0x201], 0x01);
         assert_eq!(chip8.memory[0x202], 0x02);
@@ -378,15 +368,41 @@ mod tests {
 
     #[test]
     fn test_clear_screen_instruction() {
-        let screen = Rc::new(RefCell::new(Screen::new()));
-        let mut chip8 = Chip8::new(Rc::clone(&screen)); // Clears screen in new()
-        screen.borrow_mut().bitmap[1][2] = true;
-        let rom: Vec<u8> = vec![0x00, 0xE0]; // Clear screen instruction
-        chip8.load_rom(rom);
+        let mut chip8 = Chip8::new();
+        chip8.screen[1][2] = true;
+        let rom: Vec<u16> = vec![0x00E0]; // Clear screen instruction
+        chip8.load_rom(opcodes_to_buffer(&rom));
 
-        assert!(screen.borrow().bitmap[1][2]);
+        assert!(chip8.screen[1][2]);
         chip8.cycle();
         assert_eq!(chip8.pc, 0x202);
-        assert!(!screen.borrow().bitmap[1][2]);
+        assert!(!chip8.screen[1][2]);
+    }
+
+    #[test]
+    fn test_push_and_pop_stack() {
+        let mut chip8 = Chip8::new();
+        let rom: Vec<u16> = vec![0x2666]; // Push pc to stack, jump to 0x666
+        chip8.load_rom(opcodes_to_buffer(&rom));
+
+        // Lazily insert a pop stack at the jump address
+        chip8.memory[0x666] = 0x00;
+        chip8.memory[0x667] = 0xEE;
+        chip8.cycle();
+        assert_eq!(chip8.sp, 1);
+        assert_eq!(chip8.stack[0], 0x202);
+        assert_eq!(chip8.pc, 0x666);
+        chip8.cycle();
+        assert_eq!(chip8.sp, 0);
+        assert_eq!(chip8.pc, 0x202);
+    }
+
+    #[test]
+    fn test_jump() {
+        let mut chip8 = Chip8::new();
+        let rom: Vec<u16> = vec![0x1666]; // Push pc to stack, jump to 0x666
+        chip8.load_rom(opcodes_to_buffer(&rom));
+        chip8.cycle();
+        assert_eq!(chip8.pc, 0x666);
     }
 }
