@@ -6,6 +6,10 @@ rust:
 matrix:
   allow_failures:
     - rust: nightly
+before_install:
+  - sudo apt-get update
+  - sudo apt-get install -y libegl1-mesa-dev libgles2-mesa-dev
+  - sudo apt-get install -y libsdl2-dev
 install:
   - rustup toolchain install nightly
   - rustup component add rustfmt-preview --toolchain nightly

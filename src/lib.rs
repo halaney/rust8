@@ -39,7 +39,7 @@ pub struct Chip8 {
     registers: [u8; 16],
     instruction_reg: u16,
     delay_timer: u8,
-    sound_timer: u8,
+    pub sound_timer: u8,
     pc: u16,
     sp: u8,
     stack: [u16; 16],
@@ -204,7 +204,7 @@ impl Chip8 {
                         let (vx, vf) =
                             self.registers[index_x].overflowing_sub(self.registers[index_y]);
                         self.registers[index_x] = vx;
-                        self.registers[0xF] = vf as u8;
+                        self.registers[0xF] = !vf as u8;
                     }
                     0x0006 => {
                         // TODO: Carefully confirm this is not supposed to be index_y
@@ -215,7 +215,7 @@ impl Chip8 {
                         let (vx, vf) =
                             self.registers[index_y].overflowing_sub(self.registers[index_x]);
                         self.registers[index_x] = vx;
-                        self.registers[0xF] = vf as u8;
+                        self.registers[0xF] = !vf as u8;
                     }
                     0x000E => {
                         // Conflicting docs TODO
@@ -291,6 +291,7 @@ impl Chip8 {
                         for (i, key) in self.keys.iter().enumerate() {
                             if *key {
                                 self.registers[index] = i as u8;
+                                self.pc += 2; // Break out of the waiting loop we've made
                             }
                         }
                     }
@@ -404,5 +405,57 @@ mod tests {
         chip8.load_rom(opcodes_to_buffer(&rom));
         chip8.cycle();
         assert_eq!(chip8.pc, 0x666);
+    }
+
+    #[test]
+    fn test_sub_no_overflow() {
+        let mut chip8 = Chip8::new();
+        // reg[0] -= reg[1], reg[0xF] = !borrow
+        let rom: Vec<u16> = vec![0x8015];
+        chip8.load_rom(opcodes_to_buffer(&rom));
+        chip8.registers[0] = 10;
+        chip8.registers[1] = 3;
+        chip8.cycle();
+        assert_eq!(chip8.registers[0], 7);
+        assert_eq!(chip8.registers[0xF], 1);
+    }
+
+    #[test]
+    fn test_sub_overflow() {
+        let mut chip8 = Chip8::new();
+        // reg[0] -= reg[1], reg[0xF] = !borrow
+        let rom: Vec<u16> = vec![0x8015];
+        chip8.load_rom(opcodes_to_buffer(&rom));
+        chip8.registers[0] = 0;
+        chip8.registers[1] = 1;
+        chip8.cycle();
+        assert_eq!(chip8.registers[0], 255);
+        assert_eq!(chip8.registers[0xF], 0);
+    }
+
+    #[test]
+    fn test_ysub_no_overflow() {
+        let mut chip8 = Chip8::new();
+        // reg[0] = reg[1] - reg[0], reg[0xF] = !borrow
+        let rom: Vec<u16> = vec![0x8017];
+        chip8.load_rom(opcodes_to_buffer(&rom));
+        chip8.registers[0] = 3;
+        chip8.registers[1] = 10;
+        chip8.cycle();
+        assert_eq!(chip8.registers[0], 7);
+        assert_eq!(chip8.registers[0xF], 1);
+    }
+
+    #[test]
+    fn test_ysub_overflow() {
+        let mut chip8 = Chip8::new();
+        // reg[0] = reg[1] - reg[0], reg[0xF] = !borrow
+        let rom: Vec<u16> = vec![0x8017];
+        chip8.load_rom(opcodes_to_buffer(&rom));
+        chip8.registers[1] = 0;
+        chip8.registers[0] = 1;
+        chip8.cycle();
+        assert_eq!(chip8.registers[0], 255);
+        assert_eq!(chip8.registers[0xF], 0);
     }
 }
