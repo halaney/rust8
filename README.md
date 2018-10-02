@@ -18,7 +18,7 @@ cd rust8
 cargo run ./path/to/rom
 ```
 ROMs can easily be found online under public domain.
-Controls are hard 1-4, q-r, a-f, z-v. This maps to the 4x4
+Controls are hardcoded to 1-4, q-r, a-f, z-v. This maps to the 4x4
 hexadecimal keyboard the chip-8 uses.
 #### chip-8 keyboard original layout
 ```
